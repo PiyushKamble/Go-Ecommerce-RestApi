@@ -1,5 +1,5 @@
 
-# AnimeStore E-Commerce Backend Rest API
+# E-Commerce Backend Rest API
 
 **AnimeStore E-Commerce Backend Rest API** project is an ecommerce application built using Go programming language and the Gin framework. It follows the clean code architecture, which promotes separation of concerns and maintainability.This API is designed to efficiently handle routing and HTTP requests while following best practices in code architecture and dependency management.It includes functionalities such as user authentication, product management, shopping cart, order processing, and payment integration.
 
