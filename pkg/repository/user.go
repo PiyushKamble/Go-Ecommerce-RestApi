@@ -1,0 +1,265 @@
+package repository
+
+import (
+	"ecommerce/pkg/domain"
+	"ecommerce/pkg/repository/interfaces"
+	"ecommerce/pkg/utils/models"
+	"errors"
+	"fmt"
+
+	"gorm.io/gorm"
+)
+
+type userRepository struct {
+	DB *gorm.DB
+}
+
+// constructor funciton
+
+func NewUserRepository(DB *gorm.DB) interfaces.UserRepository {
+	return &userRepository{
+		DB: DB,
+	}
+}
+
+func (ur *userRepository) CheckUserAvailability(email string) bool {
+	var userCount int
+
+	err := ur.DB.Raw("SELECT COUNT(*) FROM users WHERE email=?", email).Scan(&userCount).Error
+	if err != nil {
+		return false
+	}
+	// if count greater than 0, user already exist
+	return userCount > 0
+}
+
+func (ur *userRepository) UserBlockStatus(email string) (bool, error) {
+	var permission bool
+	err := ur.DB.Raw("SELECT permission FROM users WHERE email=?", email).Scan(&permission).Error
+	if err != nil {
+		return false, err
+	}
+	return permission, nil
+}
+
+func (ur *userRepository) FindUserByEmail(user models.UserLogin) (models.UserSignInResponse, error) {
+	var userResponse models.UserSignInResponse
+	err := ur.DB.Raw("SELECT * FROM users WHERE email=? AND permission=true", user.Email).Scan(&userResponse).Error
+	if err != nil {
+		return models.UserSignInResponse{}, errors.New("no user found")
+	}
+	return userResponse, nil
+}
+
+func (ur *userRepository) FindUserIDByOrderID(orderID int) (int, error) {
+	var userId int
+	err := ur.DB.Raw("SELECT user_id FROM orders WHERE order_id=?", orderID).Scan(&userId).Error
+	if err != nil {
+		return 0, errors.New("user id not found")
+	}
+	return userId, nil
+}
+
+func (ur *userRepository) SignUp(user models.UserDetails) (models.UserDetailsResponse, error) {
+	var userResponse models.UserDetailsResponse
+	err := ur.DB.Raw("INSERT INTO users(name,email,username,phone,password)VALUES(?,?,?,?,?)RETURNING id,name,email,phone", user.Name, user.Email, user.Username, user.Phone, user.Password).Scan(&userResponse).Error
+	if err != nil {
+		return models.UserDetailsResponse{}, err
+	}
+	return userResponse, nil
+}
+
+func (ur *userRepository) AddAddress(id int, address models.AddAddress, result bool) error {
+	query := `
+	
+	INSERT INTO addresses(user_id,name,house_name,street,city,state,pin,"default")
+	VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+	
+	`
+	fmt.Println("user id from add address repo", id)
+	err := ur.DB.Exec(query, id, address.Name, address.HouseName, address.Street, address.City, address.State, address.Pin, result).Error
+	if err != nil {
+		return errors.New("adding address failed")
+	}
+	return nil
+}
+
+func (ur *userRepository) CheckIfFirstAddress(id int) bool {
+	var addressCount int
+	err := ur.DB.Raw("SELECT COUNT(*)FROM addresses WHERE user_id=?", id).Scan(&addressCount).Error
+	if err != nil {
+		return false
+	}
+	// if addresscount >0 there is already a address
+	return addressCount > 0
+}
+
+func (ur *userRepository) GetAddresses(id int) ([]domain.Address, error) {
+	var getAddress []domain.Address
+	err := ur.DB.Raw("SELECT * FROM addresses WHERE user_id=?", id).Scan(&getAddress).Error
+	if err != nil {
+		return []domain.Address{}, errors.New("failed to getting address")
+	}
+	return getAddress, nil
+}
+
+func (ur *userRepository) GetUserDetails(id int) (models.UserDetailsResponse, error) {
+	var userDetails models.UserDetailsResponse
+
+	err := ur.DB.Raw("SELECT * FROM users WHERE id=?", id).Scan(&userDetails).Error
+	if err != nil {
+		return models.UserDetailsResponse{}, errors.New("error while getting user details")
+	}
+	return userDetails, nil
+}
+
+func (ur *userRepository) ChangePassword(id int, password string) error {
+	err := ur.DB.Exec("UPDATE users SET password=? WHERE id=?", password, id).Error
+	if err != nil {
+		return errors.New("password changing failed")
+	}
+	return nil
+}
+
+func (ur *userRepository) GetPassword(id int) (string, error) {
+	var password string
+	err := ur.DB.Raw("SELECT password FROM users WHERE id=?", id).Scan(&password).Error
+	if err != nil {
+		return "", errors.New("password getting failed")
+	}
+	return password, nil
+}
+
+func (ur *userRepository) FindIdFromPhone(phone string) (int, error) {
+	var userid int
+	err := ur.DB.Raw("SELECT id FROM users WHERE phone=?", phone).Scan(&userid).Error
+	if err != nil {
+		return 0, err
+	}
+	return userid, nil
+}
+
+func (ur *userRepository) EditName(id int, name string) error {
+	err := ur.DB.Exec("UPDATE users SET name=? WHERE id=?", name, id).Error
+	if err != nil {
+		return errors.New("error while editing name")
+	}
+	return nil
+}
+
+func (ur *userRepository) EditEmail(id int, email string) error {
+	if err := ur.DB.Exec("UPDATE users SET email=? WHERE id=?", email, id).Error; err != nil {
+		return errors.New("error while changing email")
+	}
+	return nil
+}
+
+func (ur *userRepository) EditPhone(id int, phone string) error {
+	if err := ur.DB.Exec("UPDATE users SET phone=?,WHERE id=?", phone, id).Error; err != nil {
+		return errors.New("error while changing phone number")
+	}
+	return nil
+}
+
+func (ur *userRepository) EditUsername(id int, username string) error {
+	if err := ur.DB.Exec("UPDATE users SET username=? WHERE id=?", username, id).Error; err != nil {
+		return errors.New("error while changing username")
+	}
+	return nil
+}
+
+func (ur *userRepository) RemoveFromCart(id int, inventoryID int) error {
+	if err := ur.DB.Exec("DELETE FROM line_items WHERE id=? AND inventory_id=?", id, inventoryID).Error; err != nil {
+		return errors.New("item not removed")
+	}
+	return nil
+}
+
+func (ur *userRepository) ClearCart(cartID int) error {
+	if err := ur.DB.Exec("DELETE FROM line_items WHERE cart_id=?", cartID).Error; err != nil {
+		return errors.New("cart not cleared")
+	}
+	return nil
+}
+
+func (ur *userRepository) UpdateQuantityAdd(id, inv_id int) error {
+	query := `
+	UPDATE line_items SET quantity=quantity+1 
+	WHERE cart_id=? AND inventory_id=?
+	`
+	if err := ur.DB.Exec(query, id, inv_id).Error; err != nil {
+		return errors.New("failed to add quantity")
+	}
+	return nil
+}
+
+func (ur *userRepository) UpdateQuantityLess(id, inv_id int) error {
+	query :=
+		`
+	UPDATE line_items SET quantity=quantity-1
+	WHERE cart_id=? AND inventory_id=?
+	`
+	if err := ur.DB.Exec(query, id, inv_id).Error; err != nil {
+		return errors.New("failed to decrease quantity")
+	}
+	return nil
+}
+
+func (ur *userRepository) FindUserByOrderID(orderId string) (domain.User, error) {
+	var userDetails domain.User
+	err := ur.DB.Raw("SELECT users.name,users.email,users.phone FROM users JOIN orders ON orders.user_id=users.id WHERE order_id=?", orderId).Scan(&userDetails).Error
+	if err != nil {
+		return domain.User{}, errors.New("user not found with order id")
+	}
+	return userDetails, nil
+}
+
+func (ur *userRepository) GetCartID(id int) (int, error) {
+	var cartid int
+	if err := ur.DB.Raw("SELECT id FROM cart_id WHERE user_id=?", id).Scan(&cartid).Error; err != nil {
+		return 0, errors.New("cart id not found")
+	}
+	return cartid, nil
+}
+
+func (ur *userRepository) GetProductsInCart(cart_id int) ([]int, error) {
+	var cartProducts []int
+
+	err := ur.DB.Raw("SELECT inventory_id FROM line_items WHERE cart_id=?", cart_id).Scan(&cartProducts).Error
+	if err != nil {
+		return []int{}, err
+	}
+	return cartProducts, nil
+}
+
+func (ur *userRepository) FindProductNames(inventory_id int) (string, error) {
+	var productName string
+	if err := ur.DB.Raw("SELECT product_name FROM inventories WHERE id=?", inventory_id).Scan(&productName).Error; err != nil {
+		return "", errors.New("product name not found")
+	}
+	return productName, nil
+}
+
+func (ur *userRepository) FindCartQuantity(cart_id, inventory_id int) (int, error) {
+	var quantity int
+	if err := ur.DB.Raw("SELECT quantity FROM line_items WHERE cart_id=? AND inventory_id=?", cart_id, inventory_id).Scan(&quantity).Error; err != nil {
+		return 0, errors.New("quantity not found")
+	}
+	return quantity, nil
+}
+
+func (ur *userRepository) FindPrice(inventory_id int) (float64, error) {
+	var price float64
+	if err := ur.DB.Raw("SELECT price FROM inventories WHERE id=?", inventory_id).Scan(&price).Error; err != nil {
+		return 0, errors.New("price not found")
+	}
+	return price, nil
+}
+
+func (ur *userRepository) FindCategory(inventory_id int) (int, error) {
+	var categoryId int
+	if err := ur.DB.Raw("SELECT category_id FROM inventories WHERE id=?", inventory_id).Scan(&categoryId).Error; err != nil {
+		return 0, errors.New("category id not found")
+	}
+	return categoryId, nil
+}
